@@ -1,0 +1,9 @@
+{
+  "buildCommand": "npm run build:site",
+  "outputDirectory": "dist",
+  "framework": "vite",
+  "headers": [
+    { "source": "/mediapipe/(.*)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=604800" }] },
+    { "source": "/(.*)", "headers": [{ "key": "X-Robots-Tag", "value": "noindex" }, { "key": "X-Content-Type-Options", "value": "nosniff" }] }
+  ]
+}

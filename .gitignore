@@ -1,0 +1,10 @@
+node_modules
+dist
+public/mediapipe
+tools/mp/node_modules
+tools/data/mh
+tools/data/ref.npz
+tools/data/base_*.npy
+tools/shots
+__pycache__
+.env.local

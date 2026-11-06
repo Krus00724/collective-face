@@ -1,0 +1,12 @@
+import { writeFileSync } from 'node:fs';
+import { bakeSurface, blankSurface, loadShared } from '../src/sculpture/bust';
+const s = loadShared(2);
+const surf = blankSurface(s);
+bakeSurface(s, s.ref, null, surf);
+const dir = process.env.OUT!;
+writeFileSync(dir + '/ref.bin', Buffer.from(s.denseRef.buffer));
+writeFileSync(dir + '/face.bin', Buffer.from(s.denseFace.buffer));
+writeFileSync(dir + '/nor.bin', Buffer.from(surf.normal.buffer));
+writeFileSync(dir + '/part.bin', Buffer.from(s.densePart.buffer));
+writeFileSync(dir + '/idx.bin', Buffer.from(s.indices.buffer));
+console.log(s.sub.verts, s.indices.length);
