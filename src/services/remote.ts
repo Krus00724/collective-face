@@ -33,8 +33,13 @@ export function watchAccount() {
   remote.auth.getSession().then(({ data }) => {
     publish(data.session);
     if (fromLink && data.session) {
-      useStore.getState().go('studio');
-      useStore.getState().set({ libraryOpen: true });
+      let next: string | null = null;
+      try { next = localStorage.getItem('cf-after-link'); localStorage.removeItem('cf-after-link'); } catch { /* none */ }
+      if (next === 'review') useStore.getState().go('review');
+      else {
+        useStore.getState().go('studio');
+        useStore.getState().set({ libraryOpen: true });
+      }
     }
   });
   remote.auth.onAuthStateChange((_, session) => { setTimeout(() => publish(session), 0); });

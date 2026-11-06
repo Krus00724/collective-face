@@ -27,7 +27,8 @@ export function LibraryPanel({ onClose }: { onClose: () => void }) {
     if (!remote) return;
     setBusy('Sending');
     setNote('');
-    const { error } = await remote.auth.signInWithOtp({ email: email.trim(), options: { shouldCreateUser: true } });
+    try { localStorage.setItem('cf-after-link', 'studio'); } catch { /* the link still signs in */ }
+    const { error } = await remote.auth.signInWithOtp({ email: email.trim(), options: { shouldCreateUser: true, emailRedirectTo: location.origin } });
     setBusy('');
     if (error) setNote('The e-mail could not be sent. Check the address, or try again later.');
     else setSent(true);

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { FIGURES, FIGURE_IDS } from '../data/figures';
 import { library as call, loadLibrary, remote } from '../services/remote';
 import { voiceHub, type PendingVoice } from '../services/voice';
@@ -15,7 +15,7 @@ export function ReviewView() {
   const library = useStore((s) => s.library);
   const [note, setNote] = useState('');
   useEffect(() => { loadLibrary(); }, []);
-  if (!owner) return <article className="about"><div className="column"><p>This page is only for the artist.</p></div></article>;
+  if (!owner) return <ArtistSignIn />;
 
   const store = voiceHub.store;
   const act = async (fn: () => Promise<void> | undefined, done: string) => {
@@ -84,6 +84,42 @@ export function ReviewView() {
           })}
         </ul>
         {note && <p className="small" role="status">{note}</p>}
+      </div>
+    </article>
+  );
+}
+
+/** The artist signs in with the link sent to their own address, then lands back here. */
+function ArtistSignIn() {
+  const account = useStore((s) => s.account);
+  const [email, setEmail] = useState('');
+  const [sent, setSent] = useState(false);
+  const [note, setNote] = useState('');
+  if (!remote) return <article className="about"><div className="column"><p>This page is only for the artist.</p></div></article>;
+  const send = async (event: FormEvent) => {
+    event.preventDefault();
+    setNote('');
+    try { localStorage.setItem('cf-after-link', 'review'); } catch { /* the link still signs in */ }
+    const { error } = await remote!.auth.signInWithOtp({ email: email.trim(), options: { shouldCreateUser: true, emailRedirectTo: location.origin } });
+    if (error) setNote('The e-mail could not be sent. Check the address, or try again later.');
+    else setSent(true);
+  };
+  return (
+    <article className="about">
+      <div className="column">
+        {account ? (
+          <p>You are signed in as {account.email}, which is not the artist's address.</p>
+        ) : sent ? (
+          <p>Open the link we sent to {email.trim()}, in this browser. It brings you back here.</p>
+        ) : (
+          <form className="library" onSubmit={send}>
+            <p>This page is only for the artist.</p>
+            <label className="sr" htmlFor="artist-email">E-mail</label>
+            <input id="artist-email" type="email" required autoComplete="email" placeholder="E-mail" value={email} onChange={(e) => setEmail(e.target.value)} />
+            <button id="artist-link" type="submit" className="action">Send me a link</button>
+          </form>
+        )}
+        {note && <p className="error" role="alert">{note}</p>}
       </div>
     </article>
   );
