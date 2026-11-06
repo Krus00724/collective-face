@@ -13,7 +13,7 @@ export function Nav() {
     <nav className={`nav${busy ? ' withdrawn' : ''}`} aria-label="Main">
       {items.map(([id, label]) => (
         <button key={id} id={`nav-${id}`} type="button" className={view === id ? 'here' : ''} aria-current={view === id ? 'page' : undefined} onClick={() => go(id)}>
-          {label}
+          {label === 'The Family' ? <><span className="the">The </span>Family</> : label}
         </button>
       ))}
     </nav>

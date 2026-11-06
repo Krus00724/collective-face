@@ -18,12 +18,13 @@ function goal(aspect: number, family: Family): Pose {
   const row = { x: 0, y: portrait ? 0.46 : 0.4, z: 0, az: 0, pol: 0.05, r: rowDistance(aspect, portrait ? 1.18 : 2.05), side: 0, lift: 0 };
   if (s.selected) {
     const f = family.faceOf(s.selected);
-    const r = portrait ? 1.22 : 0.98;
     const panel = s.view === 'contribute' && s.phase === 'form';
+    // on a phone the form covers the lower part of the screen, so the face steps back and up
+    const r = portrait ? (panel || s.phase === 'done' ? 2.7 : 1.5) : 0.98;
     return {
       x: f.x, y: f.y, z: f.z, az: f.facing, pol: 0.04, r: panel && !portrait ? 1.02 : r,
       side: panel && !portrait ? -0.135 * Math.min(1.1, aspect / 1.68) : 0,
-      lift: portrait && (panel || s.phase === 'done') ? -0.13 : 0,
+      lift: portrait ? (panel || s.phase === 'done' ? -0.28 : -0.05) : 0,
     };
   }
   if (s.view === 'contribute') return { ...row, side: portrait ? 0 : -0.5, r: row.r * 1.2, lift: portrait ? -0.3 : 0 };
