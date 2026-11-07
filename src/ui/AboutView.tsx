@@ -48,7 +48,8 @@ export function AboutView({ store }: { store: MutableRefObject<ContributionStore
         <p>
           Mother, Father and Child are three busts of plasticine. They begin as the faces of my friends. Over time,
           as strangers leave their traces, they are meant to become the faces of many different people. Each person
-          who gives a photograph changes one of them in one hidden way. No one is told what changed, and no one
+          who gives a photograph changes one of them in one hidden way. It works like mutation in living things:
+          most changes are too small to see, a few are large, and they add up. No one is told what changed, and no one
           controls what the family becomes.
         </p>
         <p>

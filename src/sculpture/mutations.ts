@@ -1,4 +1,5 @@
 import type { Shared } from './bust';
+import { HAIR_SLOTS, HAIR_ZONES, hairSlot, neighbour } from './hairStyle';
 
 /**
  * The living head. Every contribution works on the control cage the way hands work on
@@ -20,6 +21,7 @@ export interface Region { x: number; y: number; z: number; rx: number; ry: numbe
 type Rng = () => number;
 const between = (r: Rng, a: number, b: number) => a + (b - a) * r();
 const signOf = (r: Rng) => (r() < 0.5 ? -1 : 1);
+const cap = (v: number, c: number) => Math.max(-c, Math.min(c, v));
 
 /** Face regions in metres, in the shared reference head. */
 const R = {
@@ -45,11 +47,7 @@ const ramp = (a: number, b: number, x: number) => {
   return t * t * (3 - 2 * t);
 };
 
-/**
- * The hair is a separate sculpted mass. Four numbers after the cage say how it has been
- * reshaped: volume, length, sweep and how wild it has become. They start at zero.
- */
-export const HAIR_PARAMS = 4;
+/** Volume, length, sweep, wildness. */
 export type HairParam = 0 | 1 | 2 | 3;
 
 export class Head {
@@ -61,9 +59,11 @@ export class Head {
   private ears: [Float32Array, Float32Array];
   /** How much each cage vertex belongs to the neck. */
   private neckBand: Float32Array;
+  /** How large a piece of clay the current change takes: below 1 a small patch, above 1 a wide one. */
+  spread = 1;
 
   constructor(readonly shared: Shared, rest: Float32Array, readonly size: number) {
-    this.cage = new Float32Array(rest.length + HAIR_PARAMS);
+    this.cage = new Float32Array(rest.length + HAIR_SLOTS);
     this.cage.set(rest);
     this.identity = Float32Array.from(this.cage);
     this.tmp = new Float32Array(this.cage.length);
@@ -121,12 +121,13 @@ export class Head {
   private each(g: Region, fn: (v: number, w: number) => void) {
     const { ref, verts } = this.shared;
     const lim = REACH * REACH;
+    const k = this.spread;
     for (let v = 0; v < verts; v++) {
-      const dx = (ref[v * 3] - g.x) / g.rx;
+      const dx = (ref[v * 3] - g.x) / (g.rx * k);
       if (dx * dx > lim) continue;
-      const dy = (ref[v * 3 + 1] - g.y) / g.ry;
+      const dy = (ref[v * 3 + 1] - g.y) / (g.ry * k);
       if (dy * dy > lim) continue;
-      const dz = (ref[v * 3 + 2] - g.z) / g.rz;
+      const dz = (ref[v * 3 + 2] - g.z) / (g.rz * k);
       const q = dx * dx + dy * dy + dz * dz;
       if (q > lim) continue;
       fn(v, Math.exp(-q));
@@ -289,9 +290,9 @@ export class Head {
     }
   }
 
-  /** Changes one of the hair numbers. */
-  hair(param: HairParam, amount: number) {
-    this.cage[this.shared.verts * 3 + param] += amount;
+  /** Changes one quality of the hair, on one patch of the head or, with no patch, everywhere. */
+  hair(param: HairParam, amount: number, zone?: number) {
+    this.cage[this.shared.verts * 3 + hairSlot(param, zone)] += amount;
   }
 
   private smoothStep(amount: number, g?: Region) {
@@ -337,7 +338,7 @@ export class Head {
     }
     this.recall({ ...R.mouth, rx: 0.04, ry: 0.024 }, 0.05);
     const base = this.shared.verts * 3;
-    for (let k = 0; k < HAIR_PARAMS; k++) {
+    for (let k = 0; k < HAIR_SLOTS; k++) {
       let p = c[base + k] * 0.97;
       const a = Math.abs(p);
       if (a > 1.2) p = Math.sign(p) * (1.2 + (a - 1.2) * 0.4);
@@ -348,7 +349,7 @@ export class Head {
   /** Older changes to the hair grow stronger. */
   amplifyHair(gain: number) {
     const base = this.shared.verts * 3;
-    for (let k = 0; k < HAIR_PARAMS; k++) this.cage[base + k] *= gain;
+    for (let k = 0; k < HAIR_SLOTS; k++) this.cage[base + k] *= gain;
   }
 }
 
@@ -436,19 +437,19 @@ const ear: Trait = (h, r, m) => {
   const k = r();
   const dir = r() < 0.65 ? 1 : -1;
   for (const s of sides) {
-    if (k < 0.4) h.earOut(s, dir * m * between(r, 0.4, 0.7));
-    else if (k < 0.7) h.earScale(s, dir * m * between(r, 0.25, 0.4));
-    else if (k < 0.85) h.earLift(s, signOf(r) * m * 0.009);
-    else h.earLobe(s, dir * m * 0.01);
+    if (k < 0.4) h.earOut(s, cap(dir * m * between(r, 0.4, 0.7), 0.75));
+    else if (k < 0.7) h.earScale(s, cap(dir * m * between(r, 0.25, 0.4), 0.5));
+    else if (k < 0.85) h.earLift(s, cap(signOf(r) * m * 0.009, 0.012));
+    else h.earLobe(s, cap(dir * m * 0.01, 0.013));
   }
 };
 
 const neck: Trait = (h, r, m) => {
   const k = r();
-  if (k < 0.3) h.girth(signOf(r) * m * between(r, 0.18, 0.3));
-  else if (k < 0.5) h.headLift(signOf(r) * m * 0.018);
-  else if (k < 0.72) h.tilt(signOf(r) * m * between(r, 0.07, 0.12), false);
-  else if (k < 0.88) h.tilt(signOf(r) * m * between(r, 0.05, 0.09), true);
+  if (k < 0.3) h.girth(cap(signOf(r) * m * between(r, 0.18, 0.3), 0.35));
+  else if (k < 0.5) h.headLift(cap(signOf(r) * m * 0.018, 0.02));
+  else if (k < 0.72) h.tilt(cap(signOf(r) * m * between(r, 0.07, 0.12), 0.12), false);
+  else if (k < 0.88) h.tilt(cap(signOf(r) * m * between(r, 0.05, 0.09), 0.1), true);
   else h.swell({ x: 0, y: 0.6, z: 0.072, rx: 0.014, ry: 0.016, rz: 0.02 }, signOf(r) * m * 0.006);
 };
 
@@ -458,15 +459,24 @@ const skull: Trait = (h, r, m) => {
   if (k < 0.25) h.swell({ x: between(r, -0.025, 0.025), y: 0.77, z: -0.055, rx: 0.055, ry: 0.05, rz: 0.04 }, signOf(r) * m * between(r, 0.008, 0.013));
   else if (k < 0.45) h.push({ x: 0, y: 0.835, z: 0.01, rx: 0.06, ry: 0.035, rz: 0.08 }, 0, signOf(r) * m * 0.012);
   else if (k < 0.62) { const d = signOf(r) * m * 0.008; h.swell(R.temple(1), d); h.swell(R.temple(-1), d); }
-  else if (k < 0.82) h.scaleHead(signOf(r) * m * between(r, 0.05, 0.08));
+  else if (k < 0.82) h.scaleHead(cap(signOf(r) * m * between(r, 0.05, 0.08), 0.1));
   else h.swell({ x: signOf(r) * 0.045, y: between(r, 0.77, 0.83), z: between(r, -0.04, 0.05), rx: 0.035, ry: 0.03, rz: 0.04 }, signOf(r) * m * 0.01);
 };
 
-/** The hair gets fuller or flatter, longer or shorter, combed round, or wild. */
+/**
+ * The hair gets fuller or flatter, longer or shorter, combed over, or wild. A small piece
+ * changes one lock or patch, a larger one two patches side by side, a large one the whole head.
+ */
 const hair: Trait = (h, r, m) => {
-  const k = Math.floor(r() * HAIR_PARAMS) as HairParam;
-  h.hair(k, signOf(r) * m * between(r, 0.8, 1.5));
-  if (r() < 0.25) h.hair(((k + 1 + Math.floor(r() * 3)) % HAIR_PARAMS) as HairParam, signOf(r) * m * 0.7);
+  const k = Math.floor(r() * 4) as HairParam;
+  const dir = signOf(r);
+  const zone = Math.floor(r() * HAIR_ZONES.length);
+  if (h.spread < 0.95) h.hair(k, dir * m * between(r, 1.4, 2.4), zone);
+  else if (h.spread < 1.35) {
+    h.hair(k, dir * m * between(r, 1.2, 2), zone);
+    h.hair(k, dir * m * between(r, 0.6, 1.2), neighbour(zone, r()));
+  } else h.hair(k, dir * m * between(r, 0.8, 1.4));
+  if (r() < 0.2) h.hair(((k + 1 + Math.floor(r() * 3)) % 4) as HairParam, signOf(r) * m * 0.8, zone);
 };
 
 const TRAITS: [Trait, number][] = [
@@ -475,18 +485,34 @@ const TRAITS: [Trait, number][] = [
 ];
 const TOTAL = TRAITS.reduce((a, t) => a + t[1], 0);
 
-/** Applies one contribution. Deterministic: same seed, same change, on every device. */
+/** A standard normal number. */
+const gauss = (r: Rng) => Math.sqrt(-2 * Math.log(1 - r())) * Math.cos(2 * Math.PI * r());
+
+function pick(r: Rng) {
+  let p = r() * TOTAL;
+  for (const [t, w] of TRAITS) {
+    p -= w;
+    if (p <= 0) return t;
+  }
+  return TRAITS[0][0];
+}
+
+/**
+ * Applies one contribution. Deterministic: same seed, same change, on every device.
+ *
+ * It works like mutation in living things. Most pieces taken from a stranger are small and
+ * change almost nothing anyone could see. Now and then one is large, and a large piece can
+ * carry several features at once, the way genes that sit close together are inherited together.
+ * Changes add up, most of them slowly fade, and nothing is allowed to break the head.
+ */
 export function applyContribution(head: Head, seed: number, strength = 1) {
   const r = prng(seed);
-  let pick = r() * TOTAL;
-  let trait = TRAITS[0][0];
-  for (const [t, w] of TRAITS) {
-    pick -= w;
-    if (pick <= 0) { trait = t; break; }
-  }
-  let m = between(r, 0.3, 0.65);
-  if (r() < 0.1) m *= 2.2;
-  trait(head, r, m * strength);
+  const size = Math.min(1.6, 0.27 * Math.exp(0.8 * gauss(r)));
+  const piece = Math.min(1.8, Math.max(0.55, 0.8 * (size / 0.27) ** 0.35 * between(r, 0.82, 1.22)));
+  const linked = size > 1.3 ? 3 : size > 0.7 && r() < 0.5 ? 2 : 1;
+  head.spread = piece;
+  for (let i = 0; i < linked; i++) pick(r)(head, r, size * strength * (i === 0 ? 1 : 0.6));
+  head.spread = 1;
 }
 
 export const SETTLE_EVERY = 6;

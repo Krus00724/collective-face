@@ -23,6 +23,7 @@ const server = http.createServer((q, s) => {
   await p.waitForTimeout(1500);
   // Safari 26 on an iPhone, which this browser cannot be
   if (process.env.GLASS) await p.evaluate(() => document.documentElement.classList.add('glass'));
+  if (process.env.FRAMED) await p.evaluate(() => document.documentElement.classList.add('framed'));
   for (const s of list.split(',')) {
     await p.evaluate((s) => {
       const st = window.__store.getState();
@@ -36,7 +37,16 @@ const server = http.createServer((q, s) => {
     await p.waitForTimeout(500);
     await p.screenshot({ path: `${prefix}-${s.replace(':', '_')}.png`, timeout: 60000 });
     const nav = await p.evaluate(() => { const n = document.querySelector('.nav'); const r = [...n.children].map((b) => b.getBoundingClientRect()); return { rows: new Set(r.map((x) => Math.round(x.top))).size, right: Math.max(...r.map((x) => x.right)), width: innerWidth }; });
-    console.log(s, JSON.stringify(nav));
+    const wide = await p.evaluate(() => {
+      const W = innerWidth;
+      const out = [];
+      for (const el of document.querySelectorAll('body *')) {
+        const r = el.getBoundingClientRect();
+        if (r.width && (r.right > W + 0.5 || r.left < -0.5)) out.push(`${el.tagName.toLowerCase()}.${el.className}`.slice(0, 40) + ` ${Math.round(r.left)}..${Math.round(r.right)}`);
+      }
+      return { scroll: document.documentElement.scrollWidth, body: document.body.scrollWidth, out: out.slice(0, 8) };
+    });
+    console.log(s, JSON.stringify(nav), JSON.stringify(wide));
   }
   await b.close();
   server.close();

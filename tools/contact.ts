@@ -30,8 +30,9 @@ names.forEach((entry, n) => {
   if (op) {
     const h = new Head(shared, rest, 1);
     h.cage.set(head.cage);
+    if (op.startsWith('seed=')) for (const n of op.slice(5).split('+')) applyContribution(h, +n);
     // eslint-disable-next-line no-new-func
-    new Function('h', op.replace(/;/g, ';h.').replace(/^/, 'h.'))(h);
+    else new Function('h', op.replace(/;/g, ';h.').replace(/^/, 'h.'))(h);
     cage = Float32Array.from(h.cage);
   }
   applyEmotion(shared, cage, EMOTIONS[name] ?? {}, 1, 1);

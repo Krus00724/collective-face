@@ -2,6 +2,7 @@ import { BUST_META, FACE_U, FACE_V, PART, QUADS, REF, REST_CHILD, REST_FATHER, R
 import type { Mix } from '../data/expressions';
 import type { FigureId } from '../data/figures';
 import * as HAIR from '../data/hairData';
+import { HAIR_QUALITIES, HAIR_SLOTS, HAIR_ZONES, zoneWeight } from './hairStyle';
 import { refine, subdivision, type Polys, type Subdivision } from './subdivide';
 
 const bytes = (b64: string) => {
@@ -137,6 +138,10 @@ export interface Hair {
   /** Normals of the rest mesh, so deformed normals can be found relative to the baked ones. */
   meshNormal: Float32Array;
   centre: [number, number, number];
+  /** How much each vertex belongs to each patch of the head. */
+  zone: Float32Array;
+  /** 1 on the top of the head, fading to 0 down the sides, for combing over. */
+  top: Float32Array;
 }
 
 function meshNormals(p: Float32Array, index: Uint16Array, out: Float32Array, at = 0) {
@@ -169,7 +174,30 @@ export function loadHair(id: FigureId, identity: Float32Array, ref: Float32Array
     rest[i] = q[i] * UNIT;
     normal[i] = ((n8[i] << 24) >> 24) / 127;
   }
-  const bind = u16(HAIR[`HAIR_${key}_BIND`]);
+  const bind = Uint16Array.from(u16(HAIR[`HAIR_${key}_BIND`]));
+  // Hair that hangs past the jaw was tied to the neck and shoulders, so a thicker neck or a
+  // tilted head would drag the ends about. Tie it to the lower skull instead: it hangs from the head.
+  const nv = ref.length / 3;
+  const skull: number[] = [];
+  for (let c = 0; c < nv; c++) {
+    const y = ref[c * 3 + 1], z = ref[c * 3 + 2];
+    if (y > 0.665 && y < 0.75 && !(z > 0.05 && y < 0.71)) skull.push(c);
+  }
+  for (let i = 0; i < count; i++) {
+    let low = false;
+    for (let k = 0; k < 3; k++) if (ref[bind[i * 3 + k] * 3 + 1] < 0.655) low = true;
+    if (!low) continue;
+    const best = [-1, -1, -1], dist = [Infinity, Infinity, Infinity];
+    const x = rest[i * 3], y = rest[i * 3 + 1], z = rest[i * 3 + 2];
+    for (const c of skull) {
+      const d = (x - identity[c * 3]) ** 2 + (y - identity[c * 3 + 1]) ** 2 + (z - identity[c * 3 + 2]) ** 2;
+      if (d >= dist[2]) continue;
+      let k = 2;
+      while (k > 0 && d < dist[k - 1]) { dist[k] = dist[k - 1]; best[k] = best[k - 1]; k--; }
+      dist[k] = d; best[k] = c;
+    }
+    for (let k = 0; k < 3; k++) bind[i * 3 + k] = best[k];
+  }
   const weight = new Float32Array(count * 3);
   for (let i = 0; i < count; i++) {
     let sum = 0;
@@ -194,7 +222,6 @@ export function loadHair(id: FigureId, identity: Float32Array, ref: Float32Array
     parent[find(index[i + 2])] = a;
   }
   // this figure against the shared reference head: about a scale and a shift
-  const nv = ref.length / 3;
   let rlo = Infinity, rhi = -Infinity, flo = Infinity, fhi = -Infinity;
   const mr = [0, 0, 0], mf = [0, 0, 0];
   for (let v = 0; v < nv; v++) {
@@ -234,10 +261,19 @@ export function loadHair(id: FigureId, identity: Float32Array, ref: Float32Array
     ly = Math.min(ly, rest[i * 3 + 1]);
   }
   const far: number[] = [];
+  const zones = HAIR_ZONES.length;
+  const zone = new Float32Array(count * zones);
+  const top = new Float32Array(count);
   for (let i = 0; i < count; i++) {
     const x = rest[i * 3], y = rest[i * 3 + 1], z = rest[i * 3 + 2];
     const dx = x - centre[0], dz = z - centre[2];
     let dy = y - centre[1];
+    // hanging hair belongs to the patch it falls from, so a whole lock changes together
+    const up = Math.min(1, Math.max(0, (dy / (Math.hypot(dx, dy, dz) || 1) + 0.1) / 0.7));
+    top[i] = up * up * (3 - 2 * up);
+    const zy = dy > 0 ? dy : dy * 0.12;
+    const r = Math.hypot(dx, zy, dz) || 1;
+    for (let k = 0; k < zones; k++) zone[i * zones + k] = zoneWeight(k, dx / r, zy / r, dz / r);
     if (dy < 0) dy *= 0.3;
     const l = Math.hypot(dx, dy, dz) || 1;
     dir[i * 3] = dx / l; dir[i * 3 + 1] = dy / l; dir[i * 3 + 2] = dz / l;
@@ -257,7 +293,7 @@ export function loadHair(id: FigureId, identity: Float32Array, ref: Float32Array
   for (let i = 0; i < count; i++) depth[i] = Math.min(1, depth[i] / deep);
   const meshNormal = new Float32Array(count * 3);
   meshNormals(rest, index, meshNormal);
-  return { count, rest, normal, occ, index, bind, weight, identity, dir, depth, drop, free, room, meshNormal, centre };
+  return { count, rest, normal, occ, index, bind, weight, identity, dir, depth, drop, free, room, meshNormal, centre, zone, top };
 }
 
 const hairScratch = { n: new Float32Array(0) };
@@ -278,14 +314,22 @@ function lumps(x: number, y: number, z: number) {
   return lerp(x0, x1, uz);
 }
 
-/** Reshapes the hair by the four numbers kept after the cage: volume, length, sweep, wildness. */
+/** Reshapes the hair by the numbers kept after the cage: for the whole head, then for each patch. */
 function restyle(hair: Hair, cage: Float32Array, base: number, P: Float32Array, N: Float32Array, at: number) {
-  const V = cage[base], L = cage[base + 1], S = cage[base + 2], W = cage[base + 3];
-  const { rest, dir, depth, drop, free, room, centre, count } = hair;
-  const phase = W < 0 ? 37 : 0;
-  const wild = Math.abs(W);
+  const { rest, dir, depth, drop, free, room, centre, count, zone, top } = hair;
+  const zones = HAIR_ZONES.length;
+  const q = HAIR_QUALITIES;
   for (let i = 0; i < count; i++) {
     if (!free[i]) continue;
+    let V = cage[base], L = cage[base + 1], S = cage[base + 2], W = cage[base + 3];
+    for (let k = 0; k < zones; k++) {
+      const w = zone[i * zones + k];
+      if (w < 0.002) continue;
+      const o = base + (1 + k) * q;
+      V += cage[o] * w; L += cage[o + 1] * w; S += cage[o + 2] * w; W += cage[o + 3] * w;
+    }
+    const phase = W < 0 ? 37 : 0;
+    const wild = Math.abs(W);
     const o = (at + i) * 3;
     const t = depth[i], d = drop[i];
     const low = P[o + 1] - room[i];
@@ -301,9 +345,9 @@ function restyle(hair: Hair, cage: Float32Array, base: number, P: Float32Array, 
       z += dir[i * 3 + 2] / hl * L * 0.005 * fall;
     }
     y = Math.max(y, low);
-    // combed over to one side: the parting moves, the ends stay where they hang
-    if (S) {
-      const a = S * 0.28 * (0.35 + 0.65 * t) * (1 - d) ** 2;
+    // combed over to one side: the top slides round the skull, the hanging hair stays
+    if (S && top[i]) {
+      const a = S * 0.3 * (0.35 + 0.65 * t) * top[i];
       const dx = x - centre[0], dy = y - centre[1];
       x = centre[0] + dx * Math.cos(a) - dy * Math.sin(a);
       y = centre[1] + dx * Math.sin(a) + dy * Math.cos(a);
@@ -484,7 +528,9 @@ export function bakeSurface(shared: Shared, cage: Float32Array, restArea: Float3
       out.extra[o * 2 + 1] = occ[i];
     }
     const base = shared.verts * 3;
-    if (cage.length >= base + 4 && (cage[base] || cage[base + 1] || cage[base + 2] || cage[base + 3])) restyle(hair, cage, base, P, N, n);
+    let styled = false;
+    for (let k = base; k < Math.min(cage.length, base + HAIR_SLOTS); k++) if (cage[k]) { styled = true; break; }
+    if (styled && cage.length >= base + HAIR_SLOTS) restyle(hair, cage, base, P, N, n);
   }
   return area;
 }
