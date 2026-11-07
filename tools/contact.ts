@@ -6,7 +6,7 @@ import type { FigureId } from '../src/data/figures';
 import { applyContribution, Head, prng, SETTLE_EVERY } from '../src/sculpture/mutations';
 
 const fig = (process.argv[2] || 'mother') as FigureId;
-const names = (process.argv[3] ? process.argv[3].split(',') : Object.keys(EMOTIONS));
+const names = (process.argv[3] ? process.argv[3].split(process.argv[3].includes('|') ? '|' : ',') : Object.keys(EMOTIONS));
 const shared = loadShared(2);
 const rest = restShape(fig);
 const head = new Head(shared, rest, 1);
@@ -15,17 +15,25 @@ const rr = prng(fig.length * 91);
 for (let i = 1; i <= fold; i++) { applyContribution(head, Math.floor(rr() * 2 ** 31)); if (i % SETTLE_EVERY === 0) head.settle(); }
 const W = 300, H = 380, cols = 6, rows = Math.ceil(names.length / cols);
 const img = new Uint8Array(W * cols * H * rows);
-const hair = loadHair(fig, rest);
+const hair = loadHair(fig, rest, shared.ref);
 const surf = blankSurface(shared, hair);
 const tri = dress(shared, hair).index;
 const ang0 = +(process.argv[4] || 0.32);
 let ymin = 1e9, ymax = -1e9;
 for (let i = 0; i < rest.length; i += 3) { ymin = Math.min(ymin, rest[i + 1]); ymax = Math.max(ymax, rest[i + 1]); }
 names.forEach((entry, n) => {
-  const [name, turn] = entry.split('@');
+  const [pose, op] = entry.split('#');
+  const [name, turn] = pose.split('@');
   const ang = turn ? +turn : ang0;
   const ca = Math.cos(ang), sa = Math.sin(ang);
-  const cage = Float32Array.from(head.cage);
+  let cage = Float32Array.from(head.cage);
+  if (op) {
+    const h = new Head(shared, rest, 1);
+    h.cage.set(head.cage);
+    // eslint-disable-next-line no-new-func
+    new Function('h', op.replace(/;/g, ';h.').replace(/^/, 'h.'))(h);
+    cage = Float32Array.from(h.cage);
+  }
   applyEmotion(shared, cage, EMOTIONS[name] ?? {}, 1, 1);
   bakeSurface(shared, cage, null, surf, hair);
   const P = surf.position, N = surf.normal;

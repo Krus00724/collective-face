@@ -124,9 +124,40 @@ export interface Hair {
   weight: Float32Array;
   /** The cage the rest shape was made on. */
   identity: Float32Array;
+  /** Outward from the middle of the skull, per vertex. */
+  dir: Float32Array;
+  /** 0 on the scalp, 1 on the outermost layer. */
+  depth: Float32Array;
+  /** 0 at the top of the hair, 1 at its lowest ends. */
+  drop: Float32Array;
+  /** 0 for the brows, which never take part in a change of hairstyle. */
+  free: Float32Array;
+  /** How far a strand in front of the face may fall, so a fringe never covers the eyes. */
+  room: Float32Array;
+  /** Normals of the rest mesh, so deformed normals can be found relative to the baked ones. */
+  meshNormal: Float32Array;
+  centre: [number, number, number];
 }
 
-export function loadHair(id: FigureId, identity: Float32Array): Hair {
+function meshNormals(p: Float32Array, index: Uint16Array, out: Float32Array, at = 0) {
+  out.fill(0);
+  for (let i = 0; i < index.length; i += 3) {
+    const a = index[i] + at, b = index[i + 1] + at, c = index[i + 2] + at;
+    const ux = p[b * 3] - p[a * 3], uy = p[b * 3 + 1] - p[a * 3 + 1], uz = p[b * 3 + 2] - p[a * 3 + 2];
+    const vx = p[c * 3] - p[a * 3], vy = p[c * 3 + 1] - p[a * 3 + 1], vz = p[c * 3 + 2] - p[a * 3 + 2];
+    const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+    const oa = (a - at) * 3, ob = (b - at) * 3, oc = (c - at) * 3;
+    out[oa] += nx; out[oa + 1] += ny; out[oa + 2] += nz;
+    out[ob] += nx; out[ob + 1] += ny; out[ob + 2] += nz;
+    out[oc] += nx; out[oc + 1] += ny; out[oc + 2] += nz;
+  }
+  for (let i = 0; i < out.length; i += 3) {
+    const l = Math.hypot(out[i], out[i + 1], out[i + 2]) || 1;
+    out[i] /= l; out[i + 1] /= l; out[i + 2] /= l;
+  }
+}
+
+export function loadHair(id: FigureId, identity: Float32Array, ref: Float32Array): Hair {
   const key = id.toUpperCase() as 'MOTHER' | 'FATHER' | 'CHILD';
   const q = i16(HAIR[`HAIR_${key}_POS`]);
   const n8 = bytes(HAIR[`HAIR_${key}_NOR`]);
@@ -152,7 +183,150 @@ export function loadHair(id: FigureId, identity: Float32Array): Hair {
   }
   const occ = new Float32Array(count);
   for (let i = 0; i < count; i++) occ[i] = o8[i] / 255;
-  return { count, rest, normal, occ, index: u16(HAIR[`HAIR_${key}_IDX`]), bind, weight, identity };
+  const index = u16(HAIR[`HAIR_${key}_IDX`]);
+
+  // the brows are small separate pieces at the front of the face
+  const parent = new Int32Array(count).map((_, i) => i);
+  const find = (a: number) => { while (parent[a] !== a) { parent[a] = parent[parent[a]]; a = parent[a]; } return a; };
+  for (let i = 0; i < index.length; i += 3) {
+    const a = find(index[i]);
+    parent[find(index[i + 1])] = a;
+    parent[find(index[i + 2])] = a;
+  }
+  // this figure against the shared reference head: about a scale and a shift
+  const nv = ref.length / 3;
+  let rlo = Infinity, rhi = -Infinity, flo = Infinity, fhi = -Infinity;
+  const mr = [0, 0, 0], mf = [0, 0, 0];
+  for (let v = 0; v < nv; v++) {
+    rlo = Math.min(rlo, ref[v * 3 + 1]); rhi = Math.max(rhi, ref[v * 3 + 1]);
+    flo = Math.min(flo, identity[v * 3 + 1]); fhi = Math.max(fhi, identity[v * 3 + 1]);
+    for (let a = 0; a < 3; a++) { mr[a] += ref[v * 3 + a] / nv; mf[a] += identity[v * 3 + a] / nv; }
+  }
+  const sc = (fhi - flo) / (rhi - rlo);
+  const shift = [0, 1, 2].map((a) => mf[a] - sc * mr[a]);
+  const inRef = (i: number, a: number) => (rest[i * 3 + a] - shift[a]) / sc;
+
+  const free = new Float32Array(count);
+  const groups = new Map<number, { n: number; y: number; z: number }>();
+  for (let i = 0; i < count; i++) {
+    const g = groups.get(find(i)) ?? { n: 0, y: 0, z: 0 };
+    g.n++; g.y += inRef(i, 1); g.z += inRef(i, 2);
+    groups.set(find(i), g);
+  }
+  for (let i = 0; i < count; i++) {
+    const g = groups.get(find(i))!;
+    const y = g.y / g.n, z = g.z / g.n;
+    free[i] = g.n < 400 && z > 0.1 && y > 0.735 && y < 0.79 ? 0 : 1;
+  }
+
+  // the middle of the skull
+  const centre = [0, 0.75, 0.03].map((c, a) => c * sc + shift[a]) as [number, number, number];
+  centre[0] = 0;
+
+  const dir = new Float32Array(count * 3);
+  const depth = new Float32Array(count);
+  const drop = new Float32Array(count);
+  const room = new Float32Array(count).fill(Infinity);
+  let hy = -Infinity, ly = Infinity;
+  for (let i = 0; i < count; i++) {
+    if (!free[i]) continue;
+    hy = Math.max(hy, rest[i * 3 + 1]);
+    ly = Math.min(ly, rest[i * 3 + 1]);
+  }
+  const far: number[] = [];
+  for (let i = 0; i < count; i++) {
+    const x = rest[i * 3], y = rest[i * 3 + 1], z = rest[i * 3 + 2];
+    const dx = x - centre[0], dz = z - centre[2];
+    let dy = y - centre[1];
+    if (dy < 0) dy *= 0.3;
+    const l = Math.hypot(dx, dy, dz) || 1;
+    dir[i * 3] = dx / l; dir[i * 3 + 1] = dy / l; dir[i * 3 + 2] = dz / l;
+    let sx = 0, sy = 0, sz = 0;
+    for (let k = 0; k < 3; k++) {
+      const c = bind[i * 3 + k], w = weight[i * 3 + k];
+      sx += identity[c * 3] * w; sy += identity[c * 3 + 1] * w; sz += identity[c * 3 + 2] * w;
+    }
+    depth[i] = Math.hypot(x - sx, y - sy, z - sz);
+    if (free[i]) far.push(depth[i]);
+    drop[i] = Math.min(1, Math.max(0, (hy - y) / (hy - ly || 1)));
+    const rx = inRef(i, 0), ry = inRef(i, 1), rz = inRef(i, 2);
+    if (Math.abs(rx) < 0.065 && rz > 0.07 && ry > 0.7) room[i] = Math.max(0, ry - 0.752) * sc;
+  }
+  far.sort((a, b) => a - b);
+  const deep = far[Math.floor(far.length * 0.95)] || 0.01;
+  for (let i = 0; i < count; i++) depth[i] = Math.min(1, depth[i] / deep);
+  const meshNormal = new Float32Array(count * 3);
+  meshNormals(rest, index, meshNormal);
+  return { count, rest, normal, occ, index, bind, weight, identity, dir, depth, drop, free, room, meshNormal, centre };
+}
+
+const hairScratch = { n: new Float32Array(0) };
+
+/** Smooth value noise between -1 and 1, the same everywhere it is computed. */
+function lumps(x: number, y: number, z: number) {
+  const ix = Math.floor(x), iy = Math.floor(y), iz = Math.floor(z);
+  const fx = x - ix, fy = y - iy, fz = z - iz;
+  const ux = fx * fx * (3 - 2 * fx), uy = fy * fy * (3 - 2 * fy), uz = fz * fz * (3 - 2 * fz);
+  const h = (a: number, b: number, c: number) => {
+    let k = Math.imul(a, 374761393) ^ Math.imul(b, 668265263) ^ Math.imul(c, 2147483647);
+    k = Math.imul(k ^ (k >>> 13), 1274126177);
+    return ((k ^ (k >>> 16)) >>> 0) / 2147483648 - 1;
+  };
+  const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+  const x0 = lerp(lerp(h(ix, iy, iz), h(ix + 1, iy, iz), ux), lerp(h(ix, iy + 1, iz), h(ix + 1, iy + 1, iz), ux), uy);
+  const x1 = lerp(lerp(h(ix, iy, iz + 1), h(ix + 1, iy, iz + 1), ux), lerp(h(ix, iy + 1, iz + 1), h(ix + 1, iy + 1, iz + 1), ux), uy);
+  return lerp(x0, x1, uz);
+}
+
+/** Reshapes the hair by the four numbers kept after the cage: volume, length, sweep, wildness. */
+function restyle(hair: Hair, cage: Float32Array, base: number, P: Float32Array, N: Float32Array, at: number) {
+  const V = cage[base], L = cage[base + 1], S = cage[base + 2], W = cage[base + 3];
+  const { rest, dir, depth, drop, free, room, centre, count } = hair;
+  const phase = W < 0 ? 37 : 0;
+  const wild = Math.abs(W);
+  for (let i = 0; i < count; i++) {
+    if (!free[i]) continue;
+    const o = (at + i) * 3;
+    const t = depth[i], d = drop[i];
+    const low = P[o + 1] - room[i];
+    // fuller hair rises off the scalp, flatter hair presses down onto it
+    const out = V > 0 ? V * 0.011 * (0.3 + 0.7 * t) : V * 0.008 * t;
+    let x = P[o] + dir[i * 3] * out, y = P[o + 1] + dir[i * 3 + 1] * out, z = P[o + 2] + dir[i * 3 + 2] * out;
+    // longer hair hangs lower at the ends, shorter hair is drawn up
+    const fall = d ** 1.5;
+    y -= L * (L > 0 ? 0.032 : 0.024) * fall;
+    if (L > 0) {
+      const hl = Math.hypot(dir[i * 3], dir[i * 3 + 2]) || 1;
+      x += dir[i * 3] / hl * L * 0.005 * fall;
+      z += dir[i * 3 + 2] / hl * L * 0.005 * fall;
+    }
+    y = Math.max(y, low);
+    // combed over to one side: the parting moves, the ends stay where they hang
+    if (S) {
+      const a = S * 0.28 * (0.35 + 0.65 * t) * (1 - d) ** 2;
+      const dx = x - centre[0], dy = y - centre[1];
+      x = centre[0] + dx * Math.cos(a) - dy * Math.sin(a);
+      y = centre[1] + dx * Math.sin(a) + dy * Math.cos(a);
+    }
+    // tufts lift and sink along the surface
+    if (wild) {
+      const n = lumps(rest[i * 3] * 70 + phase, rest[i * 3 + 1] * 55, rest[i * 3 + 2] * 70);
+      const a = wild * 0.0055 * (0.25 + 0.75 * t) * n;
+      x += hair.normal[i * 3] * a; y += hair.normal[i * 3 + 1] * a; z += hair.normal[i * 3 + 2] * a;
+    }
+    P[o] = x; P[o + 1] = y; P[o + 2] = z;
+  }
+  if (hairScratch.n.length !== count * 3) hairScratch.n = new Float32Array(count * 3);
+  const now = hairScratch.n;
+  meshNormals(P, hair.index, now, at);
+  for (let i = 0; i < count; i++) {
+    const o = (at + i) * 3;
+    const x = hair.normal[i * 3] + now[i * 3] - hair.meshNormal[i * 3];
+    const y = hair.normal[i * 3 + 1] + now[i * 3 + 1] - hair.meshNormal[i * 3 + 1];
+    const z = hair.normal[i * 3 + 2] + now[i * 3 + 2] - hair.meshNormal[i * 3 + 2];
+    const l = Math.hypot(x, y, z) || 1;
+    N[o] = x / l; N[o + 1] = y / l; N[o + 2] = z / l;
+  }
 }
 
 const REST: Record<FigureId, string> = { mother: REST_MOTHER, father: REST_FATHER, child: REST_CHILD };
@@ -309,6 +483,8 @@ export function bakeSurface(shared: Shared, cage: Float32Array, restArea: Float3
       out.extra[o * 2] = 0;
       out.extra[o * 2 + 1] = occ[i];
     }
+    const base = shared.verts * 3;
+    if (cage.length >= base + 4 && (cage[base] || cage[base + 1] || cage[base + 2] || cage[base + 3])) restyle(hair, cage, base, P, N, n);
   }
   return area;
 }

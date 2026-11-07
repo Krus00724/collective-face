@@ -54,7 +54,7 @@ export class FigureRuntime {
     const spec = FIGURES[id];
     this.spec = spec;
     const rest = restShape(id);
-    const hair = loadHair(id, rest);
+    const hair = loadHair(id, rest, shared.ref);
     this.hair = hair;
     const still = dress(shared, hair);
     const buffers: StaticBuffers = {
