@@ -9,9 +9,14 @@
   --edge: clamp(16px, 3vw, 40px);
   /* room kept free at the bottom; Safari on iOS 26 lays its floating toolbar over the page */
   --below: env(safe-area-inset-bottom, 0px);
+  --above: env(safe-area-inset-top, 0px);
   color-scheme: dark;
 }
-html.glass { --below: max(calc(env(safe-area-inset-bottom, 0px) + 58px), 96px); }
+html.glass {
+  --below: max(calc(env(safe-area-inset-bottom, 0px) + 58px), 96px);
+  /* Safari 26 lets the page run under the status bar and covers it with a solid band */
+  --above: max(env(safe-area-inset-top, 0px), 56px);
+}
 html, body, #root { height: 100%; margin: 0; }
 body {
   background: var(--paper); color: var(--ink);
@@ -37,7 +42,7 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 .nav {
   position: fixed; z-index: 10; top: 0; left: 0; right: 0;
   display: flex; justify-content: flex-start; flex-wrap: wrap; gap: 6px clamp(18px, 2.6vw, 38px);
-  padding: calc(env(safe-area-inset-top, 0px) + 20px) calc(var(--edge) + env(safe-area-inset-right, 0px)) 0 calc(var(--edge) + env(safe-area-inset-left, 0px));
+  padding: calc(var(--above) + 20px) calc(var(--edge) + env(safe-area-inset-right, 0px)) 0 calc(var(--edge) + env(safe-area-inset-left, 0px));
   transition: opacity 1.2s ease;
   pointer-events: none;
 }
@@ -72,7 +77,7 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 .panel {
   position: fixed; z-index: 6; left: 0; top: 0; bottom: 0; width: min(100%, 31rem); box-sizing: border-box; overflow-y: auto;
   display: flex; flex-direction: column; justify-content: center; gap: 18px;
-  padding: calc(env(safe-area-inset-top, 0px) + 72px) 20px calc(var(--below) + 32px) calc(var(--edge) + env(safe-area-inset-left, 0px));
+  padding: calc(var(--above) + 72px) 20px calc(var(--below) + 32px) calc(var(--edge) + env(safe-area-inset-left, 0px));
   animation: arrive 1.4s ease both;
 }
 @keyframes arrive { from { opacity: 0; } }
@@ -155,7 +160,7 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 }
 .about .column {
   width: min(100%, 44rem); box-sizing: border-box; display: grid; gap: 16px;
-  padding: calc(env(safe-area-inset-top, 0px) + 84px) 24px calc(var(--below) + 56px) calc(var(--edge) + env(safe-area-inset-left, 0px));
+  padding: calc(var(--above) + 84px) 24px calc(var(--below) + 56px) calc(var(--edge) + env(safe-area-inset-left, 0px));
 }
 .about h2 { font: 400 clamp(22px, 2.6vw, 34px)/1.25 var(--font); text-wrap: balance; }
 .about p { max-width: 62ch; }
@@ -173,7 +178,7 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 .studio-grid {
   box-sizing: border-box; display: grid; align-items: start; max-width: 1560px;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.55fr) minmax(0, .8fr); gap: clamp(20px, 3vw, 48px);
-  padding: calc(env(safe-area-inset-top, 0px) + 68px) calc(var(--edge) + env(safe-area-inset-right, 0px)) calc(var(--below) + 28px) calc(var(--edge) + env(safe-area-inset-left, 0px));
+  padding: calc(var(--above) + 68px) calc(var(--edge) + env(safe-area-inset-right, 0px)) calc(var(--below) + 28px) calc(var(--edge) + env(safe-area-inset-left, 0px));
 }
 .studio svg { display: block; width: 100%; aspect-ratio: 1; touch-action: none; background: rgba(17, 17, 17, .05); user-select: none; -webkit-user-select: none; }
 .studio-main svg { max-height: calc(100vh - 150px); max-height: calc(100dvh - 150px); margin: 0 auto; }
@@ -220,7 +225,7 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
   .panel.note { background: var(--paper); max-height: none; }
   .nav {
     flex-wrap: nowrap; justify-content: space-between; gap: 0 4px;
-    padding-top: calc(env(safe-area-inset-top, 0px) + 8px); padding-bottom: 14px;
+    padding-top: calc(var(--above) + 8px); padding-bottom: 14px;
     background: linear-gradient(var(--paper) 68%, rgba(255, 255, 255, 0));
   }
   .nav button { font-size: min(9.5px, 2.35vw); letter-spacing: 0; white-space: nowrap; }
@@ -246,7 +251,7 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
   .ledger li { flex: 0 0 66px; min-width: 66px; }
   .archive .small { font-size: 9.5px; }
   .about .column { padding-right: calc(var(--edge) + env(safe-area-inset-right, 0px)); }
-  .studio-grid { grid-template-columns: minmax(0, 1fr); gap: 22px; padding-top: calc(env(safe-area-inset-top, 0px) + 72px); }
+  .studio-grid { grid-template-columns: minmax(0, 1fr); gap: 22px; padding-top: calc(var(--above) + 72px); }
   .studio-main svg { max-height: none; }
   .layers, .works ul { max-height: none; }
 }

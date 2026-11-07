@@ -21,6 +21,8 @@ const server = http.createServer((q, s) => {
   await p.goto('http://localhost:8933/');
   await p.waitForFunction(() => window.__store && window.__store.getState().ready, null, { timeout: 200000 });
   await p.waitForTimeout(1500);
+  // Safari 26 on an iPhone, which this browser cannot be
+  if (process.env.GLASS) await p.evaluate(() => document.documentElement.classList.add('glass'));
   for (const s of list.split(',')) {
     await p.evaluate((s) => {
       const st = window.__store.getState();
