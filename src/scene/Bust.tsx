@@ -56,7 +56,9 @@ export function Bust({ runtime, reduced }: { runtime: FigureRuntime; reduced: bo
   useFrame(({ camera, clock }, dt) => {
     runtime.uniforms.uTime.value = clock.elapsedTime;
     const s = useStore.getState();
-    const dim = s.view === 'about' ? 0.5 : s.selected && s.selected !== runtime.id ? 0.96 : 0;
+    const dim = s.view === 'about' ? 0.5
+      : s.selected ? (s.selected !== runtime.id ? 0.96 : 0)
+      : s.hovered && s.hovered !== runtime.id ? 0.62 : 0;
     const u = runtime.uniforms.uDim;
     u.value += (dim - u.value) * (1 - Math.exp(-dt * 2.4));
     const [tx, tz] = s.close ? CLOSE_LAYOUT[runtime.id] : [spec.x, spec.z];

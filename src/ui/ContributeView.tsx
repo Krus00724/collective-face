@@ -15,6 +15,7 @@ export function ContributeView({ family, store, reduced }: { family: Family; sto
   const lastCode = useStore((s) => s.lastCode);
   const canSend = useStore((s) => s.canSend);
   const pick = useStore((s) => s.pick);
+  const hover = useStore((s) => s.hover);
   const go = useStore((s) => s.go);
   const set = useStore((s) => s.set);
 
@@ -77,12 +78,14 @@ export function ContributeView({ family, store, reduced }: { family: Family; sto
       <section className="panel choose" aria-labelledby="choose-title">
         <h2 id="choose-title">Become part of the family</h2>
         <p className="lede">Choose a face. Leave a trace.</p>
-        <ul>
+        <ul className="names">
           {FIGURE_IDS.map((id) => (
             <li key={id}>
-              <button id={`choose-${id}`} type="button" onClick={() => pick(id)}>
-                <span>{FIGURES[id].name}</span>
-              </button>
+              <button
+                id={`choose-${id}`} type="button"
+                onPointerEnter={() => hover(id)} onPointerLeave={() => hover(null)} onFocus={() => hover(id)} onBlur={() => hover(null)}
+                onClick={() => pick(id)}
+              >{FIGURES[id].name}</button>
             </li>
           ))}
         </ul>

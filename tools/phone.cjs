@@ -13,7 +13,7 @@ const server = http.createServer((q, s) => {
 (async () => {
   const [prefix, list = 'father'] = process.argv.slice(2);
   const b = await chromium.launch({ args: ['--use-angle=swiftshader', '--use-gl=angle', '--enable-webgl', '--ignore-gpu-blocklist', '--enable-unsafe-swiftshader'] });
-  const device = { ...devices['iPhone 15 Pro'], viewport: { width: +(process.env.W || 393), height: +(process.env.H || 852) }, deviceScaleFactor: 1 };
+  const device = process.env.DESKTOP ? { ...devices['Desktop Chrome'], viewport: { width: +(process.env.W || 1440), height: +(process.env.H || 900) }, deviceScaleFactor: 1 } : { ...devices['iPhone 15 Pro'], viewport: { width: +(process.env.W || 393), height: +(process.env.H || 852) }, deviceScaleFactor: 1 };
   const c = await b.newContext({ ...device, reducedMotion: 'reduce' });
   const p = await c.newPage();
   await p.addInitScript(() => { window.__DEBUG = { speed: 8 }; });
@@ -30,13 +30,16 @@ const server = http.createServer((q, s) => {
       if (['mother', 'father', 'child'].includes(s)) { st.go('family'); window.__store.getState().pick(s); }
       else if (s === 'row') { st.go('family'); window.__store.getState().pick(null); }
       else if (s.startsWith('contribute:')) { st.go('family'); window.__store.getState().pick(s.split(':')[1]); window.__store.getState().go('contribute'); }
+      else if (s === 'menu' || s === 'hover') { st.go('family'); window.__store.getState().pick(null); }
       else st.go(s);
     }, s);
     await p.waitForTimeout(3500);
-    await p.mouse.move(200, 300); await p.mouse.move(210, 310);
+    if (s === 'menu') { await p.click('#menu'); await p.waitForTimeout(800); }
+    if (s === 'hover') { await p.hover('#look-father'); await p.waitForTimeout(1500); }
+    if (s !== 'hover') { await p.mouse.move(200, 300); await p.mouse.move(210, 310); }
     await p.waitForTimeout(500);
     await p.screenshot({ path: `${prefix}-${s.replace(':', '_')}.png`, timeout: 60000 });
-    const nav = await p.evaluate(() => { const n = document.querySelector('.nav'); const r = [...n.children].map((b) => b.getBoundingClientRect()); return { rows: new Set(r.map((x) => Math.round(x.top))).size, right: Math.max(...r.map((x) => x.right)), width: innerWidth }; });
+    const nav = await p.evaluate(() => { const n = document.querySelector('.bar'); const r = n.getBoundingClientRect(); return { bar: Math.round(r.height), width: innerWidth }; });
     const wide = await p.evaluate(() => {
       const W = innerWidth;
       const out = [];

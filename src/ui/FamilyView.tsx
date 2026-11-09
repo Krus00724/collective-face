@@ -9,6 +9,7 @@ export function FamilyView() {
   const selected = useStore((s) => s.selected);
   const go = useStore((s) => s.go);
   const pick = useStore((s) => s.pick);
+  const hover = useStore((s) => s.hover);
   const canSend = useStore((s) => s.canSend);
   const heard = useStore((s) => (s.selected ? s.voices[s.selected].length > 0 : false));
   const [idle, setIdle] = useState(false);
@@ -54,16 +55,20 @@ export function FamilyView() {
   return (
     <>
       <header className="caption">
-        <h1>Collective Face</h1>
+        <h1 className="sr">Collective Face</h1>
+        <ul className="names">
+          {FIGURE_IDS.map((id) => (
+            <li key={id}>
+              <button
+                id={`look-${id}`} type="button"
+                onPointerEnter={() => hover(id)} onPointerLeave={() => hover(null)} onFocus={() => hover(id)} onBlur={() => hover(null)}
+                onClick={() => { pick(id); voiceHub.playRandom(id); }}
+              >{FIGURES[id].name}</button>
+            </li>
+          ))}
+        </ul>
         <p>Three bodies. Countless identities. No final form.</p>
       </header>
-      <ul className="sr-keys">
-        {FIGURE_IDS.map((id) => (
-          <li key={id}>
-            <button id={`look-${id}`} type="button" onClick={() => { pick(id); voiceHub.playRandom(id); }}>Look at {FIGURES[id].name}</button>
-          </li>
-        ))}
-      </ul>
     </>
   );
 }

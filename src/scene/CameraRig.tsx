@@ -27,10 +27,11 @@ function goal(aspect: number, family: Family): Pose {
       lift: portrait ? (panel || s.phase === 'done' ? -0.28 : -0.05) : 0,
     };
   }
-  if (s.view === 'contribute') return { ...row, side: portrait ? 0 : -0.5, r: row.r * 1.2, lift: portrait ? -0.3 : 0 };
+  if (s.view === 'contribute') return { ...row, side: portrait ? 0 : -0.36, r: row.r * 1.2, lift: portrait ? -0.3 : 0 };
   if (s.view === 'archive') return { ...row, r: row.r * 1.25, lift: portrait ? -0.3 : -0.2 };
   if (s.view === 'about') return { ...row, side: portrait ? 0 : -0.55, r: row.r * 1.15 };
-  return row;
+  // the busts sit a little higher, so the names below them have room
+  return { ...row, lift: portrait ? -0.16 : -0.24 };
 }
 
 export function CameraRig({ family, reduced }: { family: Family; reduced: boolean }) {

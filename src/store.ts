@@ -18,6 +18,8 @@ interface State {
   view: View;
   /** The bust being looked at closely, in the family view or while contributing. */
   selected: FigureId | null;
+  /** The bust whose name the pointer rests on: the other two fade back. */
+  hovered: FigureId | null;
   phase: Phase;
   counts: Record<FigureId, number>;
   total: number;
@@ -47,6 +49,7 @@ interface State {
   libraryOpen: boolean;
   go(view: View): void;
   pick(id: FigureId | null): void;
+  hover(id: FigureId | null): void;
   set(patch: Partial<State>): void;
 }
 
@@ -62,6 +65,7 @@ export const useStore = create<State>((set, get) => ({
   ready: false,
   view: 'family',
   selected: null,
+  hovered: null,
   phase: 'form',
   counts: { mother: 0, father: 0, child: 0 },
   total: 0,
@@ -87,7 +91,7 @@ export const useStore = create<State>((set, get) => ({
     voiceStop?.();
     if (view !== 'contribute') set({ selected: null, phase: 'form' });
     if (view === 'archive') set({ archiveT: Math.max(0, s.weeks.filter((w) => !w.sample).length - 1), compare: false });
-    set({ view });
+    set({ view, hovered: null });
     if (location.hash.slice(1) !== view) mark(view);
   },
   pick(id) {
@@ -95,9 +99,10 @@ export const useStore = create<State>((set, get) => ({
     if (s.phase === 'becoming') return;
     if (s.view === 'archive' || s.view === 'about' || s.view === 'studio') return;
     if (!id) voiceStop?.();
-    set({ selected: id, phase: 'form' });
+    set({ selected: id, phase: 'form', hovered: null });
     if (id) mark(id);
     else mark(s.view);
   },
+  hover(id) { set({ hovered: id }); },
   set(patch) { set(patch); },
 }));
