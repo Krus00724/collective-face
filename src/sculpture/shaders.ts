@@ -11,7 +11,16 @@ attribute vec2 extB;
 attribute vec3 aRef;
 attribute vec2 aFace;
 attribute float aPart;
+attribute float aHead;
+attribute vec3 aBlink;
 uniform float uMorph;
+uniform float uBlink;
+uniform vec3 uTurn;
+uniform vec3 uNeck;
+uniform vec3 uPokeO;
+uniform vec3 uPokeD;
+uniform float uPoke;
+uniform float uBreath;
 uniform float uWave;
 uniform float uRipple;
 uniform float uTime;
@@ -20,6 +29,17 @@ varying vec2 vFace;
 varying vec2 vExtra;
 varying float vPart;
 varying vec3 vObjN;
+
+/** The head turns, nods and leans on its neck: x is the turn, y the nod, z the lean. */
+vec3 turnHead(vec3 v) {
+  vec3 a = uTurn * aHead;
+  float c = cos(a.z), s = sin(a.z);
+  v = vec3(v.x * c - v.y * s, v.x * s + v.y * c, v.z);
+  c = cos(a.y); s = sin(a.y);
+  v = vec3(v.x, v.y * c + v.z * s, -v.y * s + v.z * c);
+  c = cos(a.x); s = sin(a.x);
+  return vec3(v.x * c + v.z * s, v.y, -v.x * s + v.z * c);
+}
 
 float morphAt() {
   if (uWave <= 0.0) return uMorph;
@@ -33,6 +53,7 @@ export const VERT_NORMAL = /* glsl */ `
 float sm = morphAt();
 vec3 objectNormal = normalize(mix(normal, norB, sm));
 vObjN = objectNormal;
+objectNormal = turnHead(objectNormal);
 vRef = aRef;
 vFace = aFace;
 vPart = aPart;
@@ -45,15 +66,48 @@ if (uRipple > 0.0) {
   transformed += objectNormal * rp * uRipple;
 }`;
 
+/** Blink, breath, the turn of the head, and a finger pressed into the clay. */
+const ALIVE = /* glsl */ `
+transformed += aBlink * uBlink;
+float chest = (1.0 - aHead) * smoothstep(0.4, 0.5, aRef.y) * step(aPart, 3.5);
+transformed.z += chest * uBreath * smoothstep(-0.02, 0.06, transformed.z);
+transformed = uNeck + turnHead(transformed - uNeck);
+float pressed = 0.0;
+vec3 pressSide = vec3(0.0);
+float pressDark = 0.0;
+if (uPoke != 0.0) {
+  vec3 wp = (modelMatrix * vec4(transformed, 1.0)).xyz;
+  vec3 wn = normalize(mat3(modelMatrix) * objectNormal);
+  vec3 rel = wp - uPokeO;
+  vec3 off = rel - uPokeD * dot(rel, uPokeD);
+  float d2 = dot(off, off);
+  float facing = 1.0 - smoothstep(-0.35, 0.1, dot(wn, uPokeD));
+  // the clay sinks under the finger and rises in a soft ring around it
+  float g = exp(-d2 / 0.0005);
+  float ring = exp(-d2 / 0.0021);
+  pressed = (g - 0.3 * ring) * facing * uPoke;
+  pressSide = off * (2.0 * facing * uPoke) * (g / 0.0005 - 0.3 * ring / 0.0021);
+  pressDark = g * facing * uPoke;
+  transformed += (uPokeD * pressed) * mat3(modelMatrix);
+}
+`;
+
 export const VERT_POSITION = /* glsl */ `
 vec3 transformed = mix(position, posB, sm);
+${ALIVE}
 ${RIPPLE}
+// the dent catches the light: its sides lean in toward the finger
+if (pressDark != 0.0) {
+  vNormal = normalize(vNormal - 1.6 * normalMatrix * (pressSide * mat3(modelMatrix)));
+  vExtra.y *= 1.0 - clamp(pressDark * 38.0, 0.0, 0.55);
+}
 `;
 
 export const VERT_DEPTH = /* glsl */ `
 float sm = morphAt();
-vec3 objectNormal = normalize(mix(normal, norB, sm));
+vec3 objectNormal = turnHead(normalize(mix(normal, norB, sm)));
 vec3 transformed = mix(position, posB, sm);
+${ALIVE}
 ${RIPPLE}
 `;
 
@@ -69,6 +123,7 @@ uniform vec3 uDeep;
 uniform vec3 uPale;
 uniform float uDim;
 uniform vec3 uDimTo;
+uniform vec2 uGaze;
 varying vec3 vRef;
 varying vec2 vFace;
 varying vec2 vExtra;
@@ -116,7 +171,7 @@ tone = mix(tone, uPale, smoothstep(0.62, 0.95, clayH) * 0.3);
 if (vPart > 0.5 && vPart < 1.5) tone = mix(tone, uPale, 0.72);
 if (vPart > 2.5 && vPart < 3.5) {
   // a small round of the darker clay for the iris, and a dot of the darkest for the pupil
-  float er0 = length(vec2(abs(vRef.x) - 0.0294, vRef.y - 0.7362));
+  float er0 = length(vec2(vRef.x - sign(vRef.x) * 0.0294 - uGaze.x, vRef.y - 0.7362 - uGaze.y));
   tone = mix(tone, uPale, 0.42 * smoothstep(0.0062, 0.0078, er0));
   tone = mix(tone, uDeep * 0.75, smoothstep(0.0036, 0.0028, er0) * 0.92);
 }
@@ -147,7 +202,7 @@ if (skin > 0.0) {
   normal = bumpN(-vViewPosition, normal, vec2(h1 - h0, h2 - h0) * 0.00125 * skin);
 }
 if (vPart > 2.5 && vPart < 3.5) {
-  float er = length(vec2(abs(vRef.x) - 0.0294, vRef.y - 0.7362));
+  float er = length(vec2(vRef.x - sign(vRef.x) * 0.0294 - uGaze.x, vRef.y - 0.7362 - uGaze.y));
   float eh = -smoothstep(0.0084, 0.0052, er) * 0.7 - smoothstep(0.0040, 0.0016, er) * 1.1 + smoothstep(0.0112, 0.0072, er) * 0.2;
   normal = bumpN(-vViewPosition, normal, vec2(dFdx(eh), dFdy(eh)) * 0.0011);
 }

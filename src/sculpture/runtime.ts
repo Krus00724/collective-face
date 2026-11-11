@@ -29,6 +29,8 @@ export interface StaticBuffers {
   face: THREE.BufferAttribute;
   part: THREE.BufferAttribute;
   index: THREE.BufferAttribute;
+  head: THREE.BufferAttribute;
+  blink: THREE.BufferAttribute;
 }
 
 /** One bust: its clay, its head, and two baked surfaces on the GPU. */
@@ -57,12 +59,28 @@ export class FigureRuntime {
     const hair = loadHair(id, rest, shared.ref);
     this.hair = hair;
     const still = dress(shared, hair);
+    // closing the eyes, as a movement the shader can add at any moment
+    const open = blankSurface(shared);
+    const shut = blankSurface(shared);
+    const lids = Float32Array.from(rest);
+    applyEmotion(shared, lids, { 'eye-closure': 1 }, 1, EXPRESSION_SCALE[id]);
+    bakeSurface(shared, rest, null, open);
+    bakeSurface(shared, lids, null, shut);
+    const blink = new Float32Array(still.ref.length);
+    for (let i = 0; i < open.position.length; i++) blink[i] = shut.position[i] - open.position[i];
+    let nx = 0, ny = 0, nz = 0, nn = 0;
+    for (let v = 0; v < shared.verts; v++) {
+      const y = shared.ref[v * 3 + 1];
+      if (y > 0.575 && y < 0.615) { nx += rest[v * 3]; ny += rest[v * 3 + 1]; nz += rest[v * 3 + 2]; nn++; }
+    }
     const buffers: StaticBuffers = {
       shared,
       ref: new THREE.BufferAttribute(still.ref, 3),
       face: new THREE.BufferAttribute(still.face, 2),
       part: new THREE.BufferAttribute(still.part, 1),
       index: new THREE.BufferAttribute(still.index, 1),
+      head: new THREE.BufferAttribute(still.head, 1),
+      blink: new THREE.BufferAttribute(blink, 3),
     };
     this.buffers = buffers;
     let ey = 0, ez = 0, en = 0;
@@ -89,6 +107,8 @@ export class FigureRuntime {
     this.geometry.setAttribute('aRef', buffers.ref);
     this.geometry.setAttribute('aFace', buffers.face);
     this.geometry.setAttribute('aPart', buffers.part);
+    this.geometry.setAttribute('aHead', buffers.head);
+    this.geometry.setAttribute('aBlink', buffers.blink);
     this.attach(0, 1);
     this.geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0.6, 0), 0.6);
 
@@ -98,6 +118,9 @@ export class FigureRuntime {
       uRect: { value: new THREE.Vector4(WRINKLE_RECT[0], WRINKLE_RECT[2], WRINKLE_RECT[1] - WRINKLE_RECT[0], WRINKLE_RECT[3] - WRINKLE_RECT[2]) },
       uAge: { value: AGE[id] }, uFoldBase: { value: FOLD[id] }, uGrain: { value: [0.34, 0.4, 0.62][spec.clay.kind] },
       uDeep: { value: new THREE.Color(spec.clay.deep) }, uPale: { value: new THREE.Color(spec.clay.pale) },
+      uBlink: { value: 0 }, uTurn: { value: new THREE.Vector3() }, uNeck: { value: new THREE.Vector3(nx / nn, ny / nn, nz / nn) },
+      uPokeO: { value: new THREE.Vector3() }, uPokeD: { value: new THREE.Vector3(0, 0, -1) }, uPoke: { value: 0 },
+      uBreath: { value: 0 }, uGaze: { value: new THREE.Vector2() },
       uDim: { value: 0 }, uDimTo: { value: new THREE.Vector3(...backdropRGB()) },
     };
     this.material = new THREE.MeshStandardMaterial({ color: spec.clay.base, roughness: 0.72, metalness: 0, envMapIntensity: 1 });

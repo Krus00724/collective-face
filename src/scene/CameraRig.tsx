@@ -3,6 +3,7 @@ import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { Family } from '../sculpture/family';
 import { useStore } from '../store';
+import { hand } from './pointer';
 
 interface Pose { x: number; y: number; z: number; az: number; pol: number; r: number; side: number; lift: number }
 
@@ -39,7 +40,7 @@ export function CameraRig({ family, reduced }: { family: Family; reduced: boolea
   const dom = useThree((s) => s.gl.domElement);
   const size = useThree((s) => s.size);
   const cur = useRef<Pose | null>(null);
-  const user = useRef({ az: 0, pol: 0, zoom: 1, azT: 0, polT: 0, zoomT: 1, dragging: false, x: 0, y: 0 });
+  const user = useRef({ az: 0, pol: 0, zoom: 1, azT: 0, polT: 0, zoomT: 1, dragging: false, x: 0, y: 0, vx: 0, vy: 0, px: 0, py: 0 });
   const lastKey = useRef('');
 
   useEffect(() => {
@@ -70,12 +71,26 @@ export function CameraRig({ family, reduced }: { family: Family; reduced: boolea
       const dx = e.clientX - u.x;
       const dy = e.clientY - u.y;
       u.x = e.clientX; u.y = e.clientY;
+      u.vx = u.vx * 0.6 + dx * 0.4; u.vy = u.vy * 0.6 + dy * 0.4;
       const lim = close() ? 1.45 : 0.75;
       const slow = 0.0034 * Math.min(1, 0.4 + u.zoom);
       u.azT = Math.max(-lim, Math.min(lim, u.azT - dx * slow));
       u.polT = Math.max(-0.36, Math.min(0.62, u.polT + dy * slow * 0.75));
     };
-    const up = (e: PointerEvent) => { pointers.delete(e.pointerId); if (!pointers.size) u.dragging = false; pinch = 0; };
+    const up = (e: PointerEvent) => {
+      const one = pointers.size === 1 && pointers.has(e.pointerId);
+      pointers.delete(e.pointerId);
+      if (!pointers.size) u.dragging = false;
+      pinch = 0;
+      // let go while moving and the view glides on a little
+      if (one && !pinch) {
+        const lim = close() ? 1.45 : 0.75;
+        const slow = 0.0034 * Math.min(1, 0.4 + u.zoom);
+        u.azT = Math.max(-lim, Math.min(lim, u.azT - u.vx * slow * 7));
+        u.polT = Math.max(-0.36, Math.min(0.62, u.polT + u.vy * slow * 5));
+      }
+      u.vx = 0; u.vy = 0;
+    };
     const wheel = (e: WheelEvent) => {
       e.preventDefault();
       u.zoomT = clampZoom(u.zoomT * Math.exp(e.deltaY * 0.0011));
@@ -106,17 +121,22 @@ export function CameraRig({ family, reduced }: { family: Family; reduced: boolea
     }
     if (!cur.current) cur.current = { ...g };
     const c = cur.current;
-    const k = reduced ? 1 : 1 - Math.exp(-dt * 1.7);
+    const k = reduced ? 1 : 1 - Math.exp(-dt * 2.3);
     (Object.keys(c) as (keyof Pose)[]).forEach((n) => { c[n] += (g[n] - c[n]) * k; });
-    const ku = 1 - Math.exp(-dt * 6);
+    const ku = 1 - Math.exp(-dt * 7);
+    // the view leans a little with the mouse, so the three have depth
+    const lean = !reduced && hand.mouse && hand.present && !u.dragging && s.view !== 'archive';
+    const kp = 1 - Math.exp(-dt * 2.5);
+    u.px += ((lean ? -hand.x * 0.045 : 0) - u.px) * kp;
+    u.py += ((lean ? -hand.y * 0.022 : 0) - u.py) * kp;
     u.az += (u.azT - u.az) * ku;
     u.pol += (u.polT - u.pol) * ku;
     u.zoom += (u.zoomT - u.zoom) * ku;
 
     const t = clock.elapsedTime;
     const drift = reduced ? 0 : Math.sin(t * 0.05) * 0.012 + Math.sin(t * 0.023 + 1) * 0.01;
-    const az = c.az + u.az + drift;
-    const pol = c.pol + u.pol;
+    const az = c.az + u.az + u.px + drift;
+    const pol = c.pol + u.pol + u.py;
     const r = c.r * u.zoom;
     const rx = Math.cos(az);
     const rz = -Math.sin(az);

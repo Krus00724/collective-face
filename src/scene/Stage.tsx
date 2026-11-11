@@ -9,6 +9,7 @@ import { useStore } from '../store';
 import { BACKDROP } from '../theme';
 import { Bust } from './Bust';
 import { CameraRig } from './CameraRig';
+import { hand, watchHand } from './pointer';
 import { Lighting } from './Lighting';
 import { bakeClay } from './plasticine';
 import { renderPreview, storePreview } from './previews';
@@ -17,7 +18,9 @@ function Director({ family }: { family: Family }) {
   const three = useThree();
   const frames = useRef(0);
   useEffect(() => { debug.expose({ __loop: three.setFrameloop, __three: three }); }, [three]);
+  useEffect(watchHand, []);
   useFrame((_, dt) => {
+    hand.still += dt;
     family.tick(Math.min(100, dt * 1000));
     frames.current++;
     if (frames.current === 3) useStore.getState().set({ ready: true });
@@ -27,7 +30,8 @@ function Director({ family }: { family: Family }) {
       if (missing) storePreview(missing.iso, renderPreview(three.gl, three.scene, family, missing));
     }
     // shadows are the costliest pass, and only need every frame while a form is changing
-    if (family.moving() || frames.current % 8 === 0) three.gl.shadowMap.needsUpdate = true;
+    // the heads never quite hold still now, so the shadows follow every other frame
+    if (family.moving() || hand.pressing || frames.current % 2 === 0) three.gl.shadowMap.needsUpdate = true;
   });
   return null;
 }
@@ -93,7 +97,7 @@ export function Stage({ family, onFamily, quality, reduced }: { family: Family |
         <planeGeometry args={[40, 40]} />
         <shadowMaterial opacity={0.2} color="#141314" />
       </mesh>
-      {family && FIGURE_IDS.map((id) => <Bust key={id} runtime={family.engine.figures[id]} reduced={reduced} />)}
+      {family && FIGURE_IDS.map((id) => <Bust key={id} runtime={family.engine.figures[id]} family={family} reduced={reduced} />)}
       {family && <CameraRig family={family} reduced={reduced} />}
       {family && <Director family={family} />}
       <Pace onSlow={() => setDpr((d) => Math.max(1, d * 0.72))} />

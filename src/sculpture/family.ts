@@ -1,3 +1,4 @@
+import { EMOTIONS } from '../data/expressions';
 import * as THREE from 'three';
 import { CLOSE_LAYOUT, FIGURES, FIGURE_IDS, type FigureId } from '../data/figures';
 import { sampleContributions, SAMPLE_WEEKS, type Contribution } from '../data/sampleHistory';
@@ -27,7 +28,7 @@ export class Family {
   /** The twelve simulated weeks. A real week takes the place of the one with its number. */
   private simulated: Week[] = [];
   private tweens = {} as Record<FigureId, Tween | undefined>;
-  private hold = { mother: 6000, child: 9000, father: 12000 } as Record<FigureId, number>;
+  private hold = { mother: 3500, child: 5500, father: 7500 } as Record<FigureId, number>;
   private mood = { mother: 0, child: 0, father: 0 } as Record<FigureId, number>;
   private speaking = {} as Record<FigureId, { level: () => number; value: number } | undefined>;
   private shownT = 0;
@@ -130,7 +131,7 @@ export class Family {
     this.publish();
     for (const id of FIGURE_IDS) {
       const to = this.state(id, this.shown[id].emotion);
-      if (animate && changed.has(id)) this.morph(id, to, 5200, 0.34, 0.0012);
+      if (animate && changed.has(id)) this.morph(id, to, 4200, 0.34, 0.0012);
       else if (!this.tweens[id]) { this.engine.figures[id].arrange(to, to); this.shown[id] = to; }
     }
   }
@@ -224,7 +225,7 @@ export class Family {
         const rt = this.engine.figures[id];
         rt.arrange(this.weeks[i].states[id], target);
         rt.uniforms.uMorph.value = 0;
-        this.tweens[id] = { to: target, t: 0, dur: 1500, wave: 0, ripple: 0 };
+        this.tweens[id] = { to: target, t: 0, dur: 1100, wave: 0, ripple: 0 };
       }
     }
 
@@ -262,10 +263,35 @@ export class Family {
       const moods = FIGURES[id].moods;
       this.mood[id] = (this.mood[id] + 1) % moods.length;
       const to = this.state(id, moods[this.mood[id]]);
-      this.morph(id, to, 3200 + Math.random() * 1600, 0, 0);
-      this.hold[id] = 4200 + Math.random() * 3600;
+      this.morph(id, to, 2300 + Math.random() * 1100, 0, 0);
+      this.hold[id] = 2800 + Math.random() * 2800;
       break;
     }
+  }
+
+  /** Touched, a face answers at once: a start, a flinch, a wink. Then it goes back to its own rhythm. */
+  react(id: FigureId) {
+    if (this.calm || this.frozen || this.wasArchive || this.tweens[id] || this.speaking[id]) return;
+    const answers = ['surprise', 'grimace', 'wink', 'doubt', 'laughter', 'pout'].filter((e) => e !== this.shown[id].emotion);
+    this.morph(id, this.state(id, answers[Math.floor(Math.random() * answers.length)]), 380, 0, 0);
+    this.hold[id] = 1100;
+    // the feeling after a start is rest
+    const moods = FIGURES[id].moods;
+    this.mood[id] = (moods.indexOf('rest', this.mood[id]) + moods.length - 1) % moods.length;
+  }
+
+  /** How far the eyes are open right now, 0 to 1, so a blink never closes eyes that are shut. */
+  eyesOpen(id: FigureId) {
+    const shut = (emotion: string) => {
+      const m = EMOTIONS[emotion] ?? {};
+      const of = (k: string) => { const v = m[k]; return v === undefined ? 0 : typeof v === 'number' ? v : Math.max(v[0], v[1]); };
+      return Math.min(1, Math.max(of('eye-closure'), of('eye-slit') * 0.5));
+    };
+    const tw = this.tweens[id];
+    const a = shut(this.shown[id].emotion);
+    if (!tw) return 1 - a;
+    const p = ease(Math.min(1, tw.t / tw.dur));
+    return 1 - (a + (shut(tw.to.emotion) - a) * p);
   }
 
   /** Where the middle of a face is in the scene. */

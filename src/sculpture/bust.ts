@@ -547,8 +547,14 @@ export function dress(shared: Shared, hair: Hair) {
   const part = new Float32Array(m);
   part.set(shared.densePart);
   part.fill(4, n);
+  // how much each point belongs to the head that turns on the neck; the hair goes with the skull
+  const head = new Float32Array(m).fill(1);
+  for (let i = 0; i < n; i++) {
+    const t = Math.min(1, Math.max(0, (shared.denseRef[i * 3 + 1] - 0.565) / 0.09));
+    head[i] = t * t * (3 - 2 * t);
+  }
   const index = new Uint32Array(shared.indices.length + hair.index.length);
   index.set(shared.indices);
   for (let i = 0; i < hair.index.length; i++) index[shared.indices.length + i] = hair.index[i] + n;
-  return { ref, face, part, index };
+  return { ref, face, part, index, head };
 }
